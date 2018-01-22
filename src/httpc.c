@@ -36,6 +36,32 @@
 
 #include "fiber.h"
 
+static int ishex(int x)
+{
+    return (x >= '0' && x <= '9') ||
+           (x >= 'a' && x <= 'f') ||
+           (x >= 'A' && x <= 'F');
+}
+
+static int url_decode(const char *s, char *dec)
+{
+    char *o;
+    const char *end = s + strlen(s);
+    int c;
+
+    for (o = dec; s <= end; o++) {
+        c = *s++;
+        if (c == '+') c = ' ';
+        else if (c == '%' && (!ishex(*s++) ||
+                              !ishex(*s++) ||
+                              !sscanf(s - 2, "%2x", &c)))
+            return -1;
+        *o = c;
+    }
+
+    return o - dec;
+}
+
 /**
  * libcurl callback for CURLOPT_WRITEFUNCTION
  * @see https://curl.haxx.se/libcurl/c/CURLOPT_WRITEFUNCTION.html
@@ -134,7 +160,51 @@ httpc_request_new(struct httpc_env *env, const char *method,
 		curl_easy_setopt(req->curl_request.easy, CURLOPT_CUSTOMREQUEST, method);
 	}
 
-	curl_easy_setopt(req->curl_request.easy, CURLOPT_URL, url);
+	/* add support for http protocol over unix domain sockets */
+	const char *const prefixes[] = {
+		"http+unix://",
+		"http://unix/:/",
+	};
+	const int nprefs = sizeof(prefixes) / sizeof(char*);
+	int i, len;
+	for (i = 0; i < nprefs; i++)
+		if (strncmp(url, prefixes[i], len = strlen(prefixes[i])) == 0)
+			break;
+	if (i < nprefs) {
+		struct uri uri;
+		uri_parse(&uri, url);
+		char http_url[256];
+		char buf[256];
+		char *const path = buf;
+		strncpy(path, uri.path, uri.path_len);
+		path[uri.path_len] = '\0';
+		char *const query = path + uri.path_len + 1;
+		strncpy(query, uri.query, uri.query_len);
+		query[uri.query_len] = '\0';
+		sprintf(http_url, "http://localhost%s?%s", path, query);
+		curl_easy_setopt(req->curl_request.easy, CURLOPT_URL, http_url);
+		char *const scheme = query + uri.query_len + 1;
+		strncpy(scheme, uri.scheme, uri.scheme_len);
+		scheme[uri.scheme_len] = '\0';
+		char *const host = scheme + uri.scheme_len + 1;
+		strncpy(host, uri.host, uri.host_len);
+		host[uri.host_len] = '\0';
+		if (strcmp(scheme, "http") == 0 && strcmp(host, "unix/") == 0) {
+			char *const service = host + uri.host_len + 1;
+			strncpy(service, uri.service, uri.service_len);
+			service[uri.service_len] = '\0';
+			curl_easy_setopt(req->curl_request.easy, CURLOPT_UNIX_SOCKET_PATH,
+							 service); // service contains socket
+		} else if (strcmp(scheme, "http+unix") == 0) {
+			char socket[256];
+			len = url_decode(host, socket);
+			socket[len] = '\0';
+			curl_easy_setopt(req->curl_request.easy, CURLOPT_UNIX_SOCKET_PATH, socket);
+		}
+	}
+	else {
+		curl_easy_setopt(req->curl_request.easy, CURLOPT_URL, url);
+	}
 
 	curl_easy_setopt(req->curl_request.easy, CURLOPT_FOLLOWLOCATION, 1);
 	curl_easy_setopt(req->curl_request.easy, CURLOPT_SSL_VERIFYPEER, 1);

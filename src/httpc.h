@@ -34,6 +34,7 @@
 #include <small/region.h>
 #include <small/mempool.h>
 #include <tarantool_ev.h>
+#include <ctype.h>
 
 #include "diag.h"
 

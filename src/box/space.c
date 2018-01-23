@@ -120,6 +120,7 @@ space_create(struct space *space, struct engine *engine,
 	space->engine = engine;
 	space->index_count = index_count;
 	space->index_id_max = index_id_max;
+	rlist_create(&space->before_replace);
 	rlist_create(&space->on_replace);
 	rlist_create(&space->on_stmt_begin);
 	space->run_triggers = true;
@@ -185,6 +186,7 @@ space_delete(struct space *space)
 	free(space->index_map);
 	if (space->format != NULL)
 		tuple_format_unref(space->format);
+	trigger_destroy(&space->before_replace);
 	trigger_destroy(&space->on_replace);
 	trigger_destroy(&space->on_stmt_begin);
 	space_def_delete(space->def);
@@ -312,12 +314,33 @@ int
 space_execute_dml(struct space *space, struct txn *txn,
 		  struct request *request, struct tuple **result)
 {
+	if (unlikely(space->sequence != NULL) &&
+	    (request->type == IPROTO_INSERT ||
+	     request->type == IPROTO_REPLACE)) {
+		/*
+		 * The space has a sequence associated with it.
+		 * If the tuple has 'nil' for the primary key,
+		 * we should replace it with the next sequence
+		 * value.
+		 */
+		if (request_handle_sequence(request, space) != 0)
+			return -1;
+	}
+
+	if (unlikely(!rlist_empty(&space->before_replace) &&
+		     space->run_triggers)) {
+		/*
+		 * Call BEFORE triggers if any before dispatching
+		 * the request. Note, it may change the request
+		 * type and arguments.
+		 */
+		if (request_before_replace(request, space, txn) != 0)
+			return -1;
+	}
+
 	switch (request->type) {
 	case IPROTO_INSERT:
 	case IPROTO_REPLACE:
-		if (space->sequence != NULL &&
-		    request_handle_sequence(request, space) != 0)
-			return -1;
 		if (space->vtab->execute_replace(space, txn,
 						 request, result) != 0)
 			return -1;

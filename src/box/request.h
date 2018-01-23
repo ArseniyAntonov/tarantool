@@ -37,6 +37,7 @@ extern "C" {
 
 struct request;
 struct space;
+struct txn;
 struct tuple;
 
 /**
@@ -61,6 +62,18 @@ request_rebind_to_primary_key(struct request *request, struct space *space,
  */
 int
 request_handle_sequence(struct request *request, struct space *space);
+
+/**
+ * Run BEFORE triggers registered for a space. If a trigger
+ * changes the current statement, this function updates the
+ * request accordingly.
+ *
+ * @param request - request to fix
+ * @param space - space corresponding to request
+ */
+int
+request_before_replace(struct request *request, struct space *space,
+		       struct txn *txn);
 
 #if defined(__cplusplus)
 } /* extern "C" */

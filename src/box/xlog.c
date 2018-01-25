@@ -553,7 +553,6 @@ xdir_scan(struct xdir *dir)
 				/** Skip a corrupted file */
 				error_log(e);
 				rc = 0;
-				goto exit;
 			}
 			i++;
 		} else {
@@ -1799,7 +1798,8 @@ xlog_cursor_openfd(struct xlog_cursor *i, int fd, const char *name)
 	if (rc == -1)
 		goto error;
 	if (rc > 0) {
-		diag_set(XlogError, "Unexpected end of file");
+		diag_set(XlogError, "Unexpected end of file %s, to fix "
+			 "try to run with 'force_recovery = true'", name);
 		goto error;
 	}
 	snprintf(i->name, PATH_MAX, "%s", name);

@@ -70,6 +70,8 @@ struct space_vtab {
 
 	int (*ephemeral_delete)(struct space *, const char *);
 
+	void (*ephemeral_destroy)(struct space *);
+
 	void (*init_system_space)(struct space *);
 	/**
 	 * Initialize an ephemeral space instance.
@@ -461,6 +463,9 @@ space_new_ephemeral(struct space_def *space_def, struct rlist *key_list);
 /** Destroy and free a space. */
 void
 space_delete(struct space *space);
+
+void
+space_delete_ephemeral(struct space *space);
 
 /**
  * Dump space definition (key definitions, key count)
